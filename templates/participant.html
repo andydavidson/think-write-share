@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ session.question | truncate(60) }} &ndash; Think&ndash;Write&ndash;Share{% endblock %}
+
+{% block content %}
+<div class="participant-page">
+
+  <div class="question-banner">
+    <p class="label">Question</p>
+    <h1 class="question-text">{{ session.question }}</h1>
+  </div>
+
+  <div id="status-area" class="status-area" aria-live="polite">
+    <p class="loading-msg">Connecting&hellip;</p>
+  </div>
+
+</div>
+
+<!-- Pass slug to external JS via data attribute (CSP: no inline scripts). -->
+<div id="page-data" data-slug="{{ session.slug }}" hidden></div>
+<script src="/static/participant.js"></script>
+{% endblock %}

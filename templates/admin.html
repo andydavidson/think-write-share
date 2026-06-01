@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Admin: {{ session.question | truncate(50) }} &ndash; Think&ndash;Write&ndash;Share{% endblock %}
+
+{% block content %}
+<div class="admin-page">
+
+  <div class="admin-header">
+    <h1>Facilitator Control</h1>
+    <p class="question-text">{{ session.question }}</p>
+  </div>
+
+  <div class="admin-grid">
+
+    <!-- Status panel -->
+    <section class="admin-panel status-panel">
+      <h2>Session Status</h2>
+
+      <dl class="status-dl">
+        <dt>Status</dt>
+        <dd id="status-label" class="status-badge status-{{ status }}">{{ status }}</dd>
+
+        <dt>Participant URL</dt>
+        <dd class="participant-url-row">
+          <a href="{{ participant_url }}" target="_blank" rel="noopener" class="participant-url">
+            {{ participant_url }}
+          </a>
+          <button type="button" id="btn-copy-url" class="btn-secondary btn-small"
+            data-url="{{ participant_url }}">Copy</button>
+        </dd>
+
+        <dt>Timer</dt>
+        <dd>
+          {% if status == "thinking" %}
+            <span id="timer-display" class="timer-display">
+              {{ session.timer_seconds }}s
+            </span>
+          {% elif status == "waiting" %}
+            <span class="muted">{{ session.timer_seconds }}s (not started)</span>
+          {% else %}
+            <span class="muted">&mdash;</span>
+          {% endif %}
+        </dd>
+
+        <dt>Answers submitted</dt>
+        <dd id="answer-count" class="answer-count">{{ answer_count }}</dd>
+      </dl>
+    </section>
+
+    <!-- Action panel -->
+    <section class="admin-panel action-panel">
+      <h2>Actions</h2>
+      <div class="action-buttons">
+
+        {% if status == "waiting" %}
+        <form method="POST" action="/admin/{{ session.slug }}/{{ admin_token }}/start">
+          <button type="submit" class="btn-primary btn-large btn-action">
+            &#9654; Start Timer
+          </button>
+        </form>
+        {% endif %}
+
+        {% if status in ("thinking", "writing", "waiting") %}
+        <form method="POST" action="/admin/{{ session.slug }}/{{ admin_token }}/close">
+          <button type="submit" class="btn-danger btn-large btn-action"
+            onclick="return confirm('Close submissions? Participants will no longer be able to submit answers.')">
+            &#9632; Close Submissions
+          </button>
+        </form>
+        {% endif %}
+
+        {% if status == "closed" %}
+        <p class="closed-notice">Submissions are closed.</p>
+        {% endif %}
+
+        <a href="/admin/{{ session.slug }}/{{ admin_token }}/download.md"
+           class="btn-download btn-large btn-action">
+          &#8659; Download Answers (.md)
+        </a>
+
+      </div>
+    </section>
+
+  </div><!-- .admin-grid -->
+
+  <details class="admin-details">
+    <summary>Session info</summary>
+    <dl class="status-dl">
+      <dt>Slug</dt><dd><code>/s/{{ session.slug }}</code></dd>
+      <dt>Timer duration</dt><dd>{{ session.timer_seconds }}s</dd>
+    </dl>
+  </details>
+
+</div>
+
+<!--
+  Pass data to JS via data attributes (CSP: no inline scripts).
+  The admin token appears in the URL but is not used in JS — JS only reads
+  public state from /api/s/{slug}/state to refresh the timer and answer count.
+-->
+<div id="page-data"
+  data-slug="{{ session.slug }}"
+  data-status="{{ status }}"
+  data-timer-seconds="{{ session.timer_seconds }}"
+  data-timer-started-at="{{ session.timer_started_at or '' }}"
+  hidden></div>
+<script src="/static/admin.js"></script>
+{% endblock %}

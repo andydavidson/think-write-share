@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Think&ndash;Write&ndash;Share{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <!-- Privacy: no analytics, no tracking pixels, no external resources. -->
+</head>
+<body>
+  <header class="site-header">
+    <a href="/" class="site-logo">Think&ndash;Write&ndash;Share</a>
+  </header>
+  <main class="main-content">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="site-footer">
+    <p>Anonymous facilitation &mdash; no accounts, no tracking.</p>
+  </footer>
+</body>
+</html>

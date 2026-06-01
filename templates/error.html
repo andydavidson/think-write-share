@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Error {{ status_code }} &ndash; Think&ndash;Write&ndash;Share{% endblock %}
+
+{% block content %}
+<div class="card error-page">
+  <h1>{{ status_code }}</h1>
+  <p>{{ detail }}</p>
+  <a href="/" class="btn-primary">Back to home</a>
+</div>
+{% endblock %}
