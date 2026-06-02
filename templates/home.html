@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Think&ndash;Write&ndash;Share{% endblock %}
+
+{% block content %}
+<div class="home-page">
+
+  <div class="home-hero">
+    <h1 class="home-title">Think&ndash;Write&ndash;Share</h1>
+    <p class="home-tagline">A simple, anonymous way to gather everyone&rsquo;s honest thoughts &mdash; before the loudest voice sets the tone.</p>
+  </div>
+
+  <div class="stages">
+
+    <div class="stage">
+      <div class="stage-icon-area">
+        <!-- Lightbulb: the thinking mind -->
+        <svg class="stage-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 18h6"/>
+          <path d="M10 22h4"/>
+          <path d="M12 2a7 7 0 0 0-4.899 11.9c.516.493.899 1.173.899 1.9v.2h8v-.2c0-.727.383-1.407.899-1.9A7 7 0 0 0 12 2z"/>
+        </svg>
+        <span class="stage-name">Think</span>
+      </div>
+      <p class="stage-desc">The facilitator poses a question and starts a silent timer. Everyone reflects independently &mdash; no discussion, no anchoring on others&rsquo; views.</p>
+    </div>
+
+    <div class="stage">
+      <div class="stage-icon-area">
+        <!-- Pencil: committing thoughts to text -->
+        <svg class="stage-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+          <path d="m15 5 4 4"/>
+        </svg>
+        <span class="stage-name">Write</span>
+      </div>
+      <p class="stage-desc">When the timer ends, an answer box appears. Everyone submits their own response anonymously &mdash; no names, no accounts, nothing stored that could identify you.</p>
+    </div>
+
+    <div class="stage">
+      <div class="stage-icon-area">
+        <!-- Share network: ideas reaching others -->
+        <svg class="stage-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="18" cy="5" r="3"/>
+          <circle cx="6" cy="12" r="3"/>
+          <circle cx="18" cy="19" r="3"/>
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+        </svg>
+        <span class="stage-name">Share</span>
+      </div>
+      <p class="stage-desc">The facilitator closes the session. Everyone sees one randomly chosen anonymous response. Discussion begins from a foundation of honest, independent thought.</p>
+    </div>
+
+  </div>
+
+  <ul class="benefits">
+    <li>No groupthink &mdash; everyone forms their own view before hearing others</li>
+    <li>Quiet voices count as much as loud ones</li>
+    <li>Fully anonymous &mdash; no accounts, no tracking, no participant data stored</li>
+    <li>Works for retrospectives, check-ins, decisions, and structured feedback</li>
+  </ul>
+
+  <div class="home-cta">
+    <a href="/new" class="btn-primary btn-large">Create a session &rarr;</a>
+
+    <div class="join-section">
+      <p class="join-prompt">Have a session code?</p>
+      {% if join_error %}
+      <p class="join-error" role="alert">{{ join_error }}</p>
+      {% endif %}
+      <form class="join-form" method="GET" action="/join">
+        <input
+          type="text"
+          name="code"
+          placeholder="{{ example_code }}"
+          value="{{ join_code or '' }}"
+          autocomplete="off"
+          spellcheck="false"
+          autocapitalize="none"
+          aria-label="Session code"
+        >
+        <button type="submit" class="btn-secondary">Join &rarr;</button>
+      </form>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

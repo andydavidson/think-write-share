@@ -160,9 +160,30 @@ def _effective_status(session) -> str:
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    return templates.TemplateResponse(request, "index.html", {
+    return templates.TemplateResponse(request, "home.html", {
+        "example_code": generate_slug(),
+    })
+
+
+@app.get("/new", response_class=HTMLResponse)
+async def new_session_page(request: Request):
+    return templates.TemplateResponse(request, "create.html", {
         "suggested_slug": generate_slug(),
     })
+
+
+@app.get("/join")
+async def join_session(request: Request, code: str = ""):
+    slug = code.strip().lower()
+    if not slug:
+        return RedirectResponse("/", status_code=302)
+    if db.get_session(slug) is not None:
+        return RedirectResponse(f"/s/{slug}", status_code=302)
+    return templates.TemplateResponse(request, "home.html", {
+        "join_error": f"No session found for \u2018{slug}\u2019. Check the code and try again.",
+        "join_code": slug,
+        "example_code": generate_slug(),
+    }, status_code=404)
 
 
 @app.post("/create")
@@ -192,7 +213,7 @@ async def create_session(
         errors.append(f"The slug '{slug}' is already taken. Please choose another.")
 
     if errors:
-        return templates.TemplateResponse(request, "index.html", {
+        return templates.TemplateResponse(request, "create.html", {
             "suggested_slug": slug,
             "errors": errors,
             "question": question,

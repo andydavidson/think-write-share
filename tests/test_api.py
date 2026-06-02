@@ -30,11 +30,51 @@ class TestHomepage:
     def test_get_returns_200(self, client):
         assert client.get("/").status_code == 200
 
+    def test_explains_the_three_stages(self, client):
+        text = client.get("/").text
+        assert "Think" in text
+        assert "Write" in text
+        assert "Share" in text
+
+    def test_has_create_session_link(self, client):
+        assert '/new' in client.get("/").text
+
+    def test_has_join_form(self, client):
+        assert 'action="/join"' in client.get("/").text
+
+
+class TestCreatePage:
+    def test_get_returns_200(self, client):
+        assert client.get("/new").status_code == 200
+
     def test_contains_slug_input(self, client):
-        assert 'name="slug"' in client.get("/").text
+        assert 'name="slug"' in client.get("/new").text
 
     def test_contains_question_input(self, client):
-        assert 'name="question"' in client.get("/").text
+        assert 'name="question"' in client.get("/new").text
+
+
+class TestJoinSession:
+    def test_valid_code_redirects_to_session(self, client):
+        _create_session(client, slug="joinable-slug")
+        resp = client.get("/join?code=joinable-slug", follow_redirects=False)
+        assert resp.status_code == 302
+        assert "/s/joinable-slug" in resp.headers["location"]
+
+    def test_code_is_normalised(self, client):
+        _create_session(client, slug="joinable-slug")
+        resp = client.get("/join?code= JOINABLE-SLUG ", follow_redirects=False)
+        assert resp.status_code == 302
+
+    def test_unknown_code_returns_404_with_error(self, client):
+        resp = client.get("/join?code=does-not-exist")
+        assert resp.status_code == 404
+        assert "does-not-exist" in resp.text
+
+    def test_empty_code_redirects_home(self, client):
+        resp = client.get("/join?code=", follow_redirects=False)
+        assert resp.status_code == 302
+        assert resp.headers["location"] in ("/", "http://testserver/")
 
 
 # ---------------------------------------------------------------------------

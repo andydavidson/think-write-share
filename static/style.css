@@ -196,6 +196,144 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   color: var(--success);
 }
 
+/* --- Home / landing page ---------------------------------- */
+.home-page { display: flex; flex-direction: column; gap: 2.5rem; }
+
+/* Academic-serif title — Computer Modern for LaTeX users, Palatino for everyone else */
+.home-title {
+  font-family: "CMU Serif", "Computer Modern", "Palatino Linotype",
+               "Book Antiqua", Palatino, Georgia, serif;
+  font-size: 2.4rem;
+  font-weight: 400;     /* CM looks better at regular weight */
+  letter-spacing: -.01em;
+  margin-bottom: .55rem;
+}
+
+.home-hero { text-align: center; padding: 1.25rem 0 .25rem; }
+.home-tagline {
+  font-size: 1rem;
+  color: var(--text-muted);
+  max-width: 520px;
+  margin: 0 auto;
+  line-height: 1.65;
+}
+
+/* Three stage cards */
+.stages {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+@media (max-width: 620px) {
+  .stages { grid-template-columns: 1fr; }
+}
+
+.stage {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;       /* clip the icon area corners */
+}
+
+/* Coloured icon band at top of each card */
+.stage-icon-area {
+  background: rgba(42, 100, 150, .07);
+  border-bottom: 1px solid rgba(42, 100, 150, .12);
+  padding: 1.4rem 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .55rem;
+}
+
+.stage-icon {
+  width: 36px;
+  height: 36px;
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.stage-name {
+  font-family: "CMU Serif", "Computer Modern", "Palatino Linotype",
+               "Book Antiqua", Palatino, Georgia, serif;
+  font-size: .8rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: .18em;
+  color: var(--primary);
+}
+
+.stage-desc {
+  font-size: .82rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  padding: 1rem 1.1rem 1.2rem;
+}
+
+/* Benefits list */
+.benefits {
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.25rem 1.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+}
+.benefits li {
+  padding-left: 1.5rem;
+  position: relative;
+  font-size: .88rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.benefits li::before {
+  content: "—";
+  position: absolute;
+  left: 0;
+  color: var(--primary);
+  font-weight: 400;
+}
+
+/* CTA area */
+.home-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  padding-bottom: .5rem;
+}
+
+/* Join section */
+.join-section { text-align: center; }
+.join-prompt {
+  font-size: .85rem;
+  color: var(--text-muted);
+  margin-bottom: .5rem;
+}
+.join-error {
+  font-size: .85rem;
+  color: var(--danger);
+  margin-bottom: .5rem;
+}
+.join-form {
+  display: flex;
+  gap: .5rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.join-form input[type="text"] {
+  width: auto;
+  flex: 1;
+  min-width: 210px;
+  max-width: 300px;
+  font-family: monospace;
+  font-size: .9rem;
+}
+
 /* --- Create page ------------------------------------------ */
 .create-card h1 { margin-bottom: .25rem; }
 

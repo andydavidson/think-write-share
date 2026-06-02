@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Create Session &ndash; Think&ndash;Write&ndash;Share{% endblock %}
+
+{% block content %}
+<div class="card create-card">
+  <h1>Create a Session</h1>
+  <p class="intro">Set up an anonymous Think&ndash;Write&ndash;Share session for your group.</p>
+
+  {% if errors %}
+  <div class="error-box" role="alert">
+    {% for e in errors %}<p>{{ e }}</p>{% endfor %}
+  </div>
+  {% endif %}
+
+  <form method="POST" action="/create" novalidate>
+
+    <div class="field">
+      <label for="question">Question</label>
+      <textarea
+        id="question"
+        name="question"
+        required
+        maxlength="500"
+        rows="3"
+        placeholder="e.g. What is one thing holding our team back right now?"
+      >{{ question or "" }}</textarea>
+      <div class="field-hint">
+        <span id="q-count">{{ (question or "")|length }}</span>/500 characters
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="timer_seconds">Think timer</label>
+      <select id="timer_seconds" name="timer_seconds">
+        {% set t = timer_seconds | default(120) %}
+        <option value="30"  {% if t == 30  %}selected{% endif %}>30 seconds</option>
+        <option value="60"  {% if t == 60  %}selected{% endif %}>1 minute</option>
+        <option value="120" {% if t == 120 or not timer_seconds %}selected{% endif %}>2 minutes</option>
+        <option value="180" {% if t == 180 %}selected{% endif %}>3 minutes</option>
+        <option value="300" {% if t == 300 %}selected{% endif %}>5 minutes</option>
+        <option value="600" {% if t == 600 %}selected{% endif %}>10 minutes</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="slug">Session URL slug</label>
+      <div class="slug-row">
+        <span class="slug-prefix">/s/</span>
+        <input
+          type="text"
+          id="slug"
+          name="slug"
+          required
+          value="{{ suggested_slug }}"
+          pattern="[a-z0-9][a-z0-9\-]*[a-z0-9]"
+          minlength="3"
+          maxlength="60"
+          autocomplete="off"
+          spellcheck="false"
+          autocapitalize="none"
+        >
+        <button type="button" id="btn-new-slug" class="btn-secondary">Regenerate</button>
+      </div>
+      <div class="field-hint slug-hint" id="slug-hint" aria-live="polite"></div>
+    </div>
+
+    <button type="submit" class="btn-primary btn-large">Create Session &rarr;</button>
+  </form>
+</div>
+
+<!-- Pass data to JS via data attributes (no inline scripts; CSP safe). -->
+<div id="page-data" data-suggested-slug="{{ suggested_slug }}" hidden></div>
+<script src="/static/create.js"></script>
+{% endblock %}
