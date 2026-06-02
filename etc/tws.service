@@ -1,0 +1,37 @@
+# tws.service — systemd unit for Think–Write–Share
+#
+# Install:
+#   sudo cp tws.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now tws
+
+[Unit]
+Description=Think-Write-Share facilitation app
+After=network.target
+
+[Service]
+Type=simple
+User=tws
+Group=tws
+WorkingDirectory=/opt/tws
+Environment="TWS_DB_PATH=/var/lib/tws/tws.db"
+
+# One async worker is enough for a facilitation tool and keeps the
+# in-memory rate-limiter consistent across all requests.
+ExecStart=/opt/tws/venv/bin/uvicorn app:app \
+    --host 127.0.0.1 \
+    --port 8000 \
+    --workers 1
+
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/tws
+
+[Install]
+WantedBy=multi-user.target
