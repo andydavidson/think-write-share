@@ -32,10 +32,10 @@
     <div class="field">
       <label for="timer_seconds">Think timer</label>
       <select id="timer_seconds" name="timer_seconds">
-        {% set t = timer_seconds | default(60) %}
+        {% set t = timer_seconds | default(120) %}
         <option value="30"  {% if t == 30  %}selected{% endif %}>30 seconds</option>
-        <option value="60"  {% if t == 60  or not timer_seconds %}selected{% endif %}>1 minute</option>
-        <option value="120" {% if t == 120 %}selected{% endif %}>2 minutes</option>
+        <option value="60"  {% if t == 60  %}selected{% endif %}>1 minute</option>
+        <option value="120" {% if t == 120 or not timer_seconds %}selected{% endif %}>2 minutes</option>
         <option value="180" {% if t == 180 %}selected{% endif %}>3 minutes</option>
         <option value="300" {% if t == 300 %}selected{% endif %}>5 minutes</option>
         <option value="600" {% if t == 600 %}selected{% endif %}>10 minutes</option>
