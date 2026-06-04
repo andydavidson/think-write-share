@@ -542,7 +542,7 @@ class TestApiSubmitAnswer:
 # ---------------------------------------------------------------------------
 
 class TestApiRandomAnswer:
-    def test_returns_answer_when_closed_with_answers(self, client, db_path):
+    def test_returns_answer_when_closed(self, client, db_path):
         import db as db_module
         slug, _ = _create_session(client)
         db_module.add_answer(slug, "Great insight", time.time())
@@ -551,7 +551,7 @@ class TestApiRandomAnswer:
         assert resp.status_code == 200
         assert resp.json()["answer"] == "Great insight"
 
-    def test_returns_null_answer_when_closed_with_no_answers(self, client, db_path):
+    def test_returns_null_when_closed_with_no_answers(self, client, db_path):
         import db as db_module
         slug, _ = _create_session(client)
         db_module.close_session(slug, time.time())
@@ -559,19 +559,47 @@ class TestApiRandomAnswer:
         assert resp.status_code == 200
         assert resp.json()["answer"] is None
 
-    def test_returns_one_of_many_answers(self, client, db_path):
+    def test_each_answer_distributed_exactly_once(self, client, db_path):
+        """The core guarantee: N participants each see a different answer."""
         import db as db_module
         slug, _ = _create_session(client)
-        for text in ("Alpha", "Beta", "Gamma"):
-            db_module.add_answer(slug, text, time.time())
+        texts = ["Alpha", "Beta", "Gamma", "Delta"]
+        for t in texts:
+            db_module.add_answer(slug, t, time.time())
         db_module.close_session(slug, time.time())
-        answer = client.get(f"/api/s/{slug}/random-answer").json()["answer"]
-        assert answer in ("Alpha", "Beta", "Gamma")
+
+        received = [
+            client.get(f"/api/s/{slug}/random-answer").json()["answer"]
+            for _ in texts
+        ]
+        assert sorted(received) == sorted(texts), \
+            "Every answer must be distributed exactly once across N participants"
+
+    def test_no_duplicates_in_first_pass(self, client, db_path):
+        import db as db_module
+        slug, _ = _create_session(client)
+        for i in range(6):
+            db_module.add_answer(slug, f"Answer {i}", time.time())
+        db_module.close_session(slug, time.time())
+
+        received = [client.get(f"/api/s/{slug}/random-answer").json()["answer"] for _ in range(6)]
+        assert len(set(received)) == 6, "No duplicates on the first pass"
+
+    def test_wraps_gracefully_when_more_callers_than_answers(self, client, db_path):
+        """If more people ask than submitted, they still get an answer (wraps)."""
+        import db as db_module
+        slug, _ = _create_session(client)
+        db_module.add_answer(slug, "Only one", time.time())
+        db_module.close_session(slug, time.time())
+
+        r1 = client.get(f"/api/s/{slug}/random-answer").json()["answer"]
+        r2 = client.get(f"/api/s/{slug}/random-answer").json()["answer"]
+        assert r1 == "Only one"
+        assert r2 == "Only one"
 
     def test_fails_when_not_closed(self, client):
-        _create_session(client)  # status: waiting
-        resp = client.get("/api/s/my-session/random-answer")
-        assert resp.status_code == 400
+        _create_session(client)
+        assert client.get("/api/s/my-session/random-answer").status_code == 400
 
     def test_fails_when_thinking(self, client, db_path):
         slug, token = _create_session(client)

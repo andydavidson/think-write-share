@@ -410,7 +410,7 @@ async def api_random_answer(slug: str):
     if session["status"] != "closed":
         raise HTTPException(status_code=400, detail="Session is not closed yet.")
 
-    row = db.get_random_answer(slug)
+    row = db.get_next_answer(slug)
     if row is None:
         return JSONResponse({"answer": None, "message": "No answers were submitted."})
     return JSONResponse({"answer": row["answer_text"]})

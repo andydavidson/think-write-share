@@ -6,6 +6,7 @@ Privacy by design:
 - Answers store only answer text and a submission timestamp.
 - No IP addresses, user agents, or cookies are persisted here.
 """
+import random
 import sqlite3
 import os
 from typing import Optional
@@ -25,25 +26,36 @@ def init_db() -> None:
     with _conn() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
-                slug             TEXT    PRIMARY KEY,
-                question         TEXT    NOT NULL,
-                admin_token      TEXT    NOT NULL,
-                status           TEXT    NOT NULL DEFAULT 'waiting',
-                timer_seconds    INTEGER NOT NULL,
-                timer_started_at REAL,
-                created_at       REAL    NOT NULL,
-                closed_at        REAL
+                slug                 TEXT    PRIMARY KEY,
+                question             TEXT    NOT NULL,
+                admin_token          TEXT    NOT NULL,
+                status               TEXT    NOT NULL DEFAULT 'waiting',
+                timer_seconds        INTEGER NOT NULL,
+                timer_started_at     REAL,
+                created_at           REAL    NOT NULL,
+                closed_at            REAL,
+                distribution_counter INTEGER NOT NULL DEFAULT 0
             )
         """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS answers (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_slug TEXT    NOT NULL,
-                answer_text  TEXT    NOT NULL,
-                submitted_at REAL    NOT NULL,
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_slug     TEXT    NOT NULL,
+                answer_text      TEXT    NOT NULL,
+                submitted_at     REAL    NOT NULL,
+                distribution_idx INTEGER,
                 FOREIGN KEY (session_slug) REFERENCES sessions(slug)
             )
         """)
+        # Migrate existing databases that predate the distribution columns.
+        for stmt in (
+            "ALTER TABLE sessions ADD COLUMN distribution_counter INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE answers  ADD COLUMN distribution_idx INTEGER",
+        ):
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass  # column already exists
         conn.commit()
 
 
@@ -90,9 +102,28 @@ def set_status(slug: str, status: str) -> None:
 
 
 def close_session(slug: str, closed_at: float) -> None:
+    """
+    Close the session and assign a shuffled distribution_idx to every answer.
+
+    The shuffle happens here, at close time, so the order is fixed once and
+    distribution_counter can be incremented atomically per retrieval request,
+    guaranteeing each answer is served to exactly one participant on the first
+    pass (wrapping around only if more people request than submitted answers).
+    """
     with _conn() as conn:
+        rows = conn.execute(
+            "SELECT id FROM answers WHERE session_slug = ? ORDER BY submitted_at",
+            (slug,),
+        ).fetchall()
+        ids = [r[0] for r in rows]
+        random.shuffle(ids)
+        for idx, answer_id in enumerate(ids):
+            conn.execute(
+                "UPDATE answers SET distribution_idx = ? WHERE id = ?",
+                (idx, answer_id),
+            )
         conn.execute(
-            "UPDATE sessions SET status='closed', closed_at=? WHERE slug=?",
+            "UPDATE sessions SET status='closed', closed_at=?, distribution_counter=0 WHERE slug=?",
             (closed_at, slug),
         )
         conn.commit()
@@ -126,10 +157,37 @@ def get_answers(session_slug: str) -> list:
         ).fetchall()
 
 
-def get_random_answer(session_slug: str) -> Optional[sqlite3.Row]:
+def get_next_answer(session_slug: str) -> Optional[sqlite3.Row]:
+    """
+    Return the next answer in the pre-shuffled distribution sequence.
+
+    Atomically increments distribution_counter and maps it to a
+    distribution_idx so each answer is served exactly once on the first
+    pass.  If more participants request than submitted answers the sequence
+    wraps, so no one is ever left empty-handed.
+    """
     with _conn() as conn:
+        conn.execute(
+            "UPDATE sessions SET distribution_counter = distribution_counter + 1 WHERE slug = ?",
+            (session_slug,),
+        )
+        row = conn.execute(
+            "SELECT distribution_counter FROM sessions WHERE slug = ?",
+            (session_slug,),
+        ).fetchone()
+        counter = row[0] - 1  # 0-indexed slot for this caller
+
+        count = conn.execute(
+            "SELECT COUNT(*) FROM answers WHERE session_slug = ?",
+            (session_slug,),
+        ).fetchone()[0]
+
+        if count == 0:
+            return None
+
+        idx = counter % count
         return conn.execute(
             "SELECT answer_text FROM answers"
-            " WHERE session_slug=? ORDER BY RANDOM() LIMIT 1",
-            (session_slug,),
+            " WHERE session_slug = ? AND distribution_idx = ?",
+            (session_slug, idx),
         ).fetchone()

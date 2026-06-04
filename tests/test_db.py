@@ -92,6 +92,40 @@ class TestCloseSession:
         s = db.get_session("test-slug")
         assert abs(s["closed_at"] - t) < 0.001
 
+    def test_assigns_distribution_idx_to_all_answers(self):
+        _make_session()
+        for text in ("A", "B", "C"):
+            db.add_answer("test-slug", text, time.time())
+        db.close_session("test-slug", time.time())
+        # Every answer should now have a distribution_idx assigned
+        with db._conn() as conn:
+            rows = conn.execute(
+                "SELECT distribution_idx FROM answers WHERE session_slug='test-slug'"
+            ).fetchall()
+        indices = sorted(r[0] for r in rows)
+        assert indices == [0, 1, 2]
+
+    def test_distribution_idx_covers_all_positions(self):
+        _make_session()
+        for text in ("X", "Y", "Z", "W"):
+            db.add_answer("test-slug", text, time.time())
+        db.close_session("test-slug", time.time())
+        with db._conn() as conn:
+            rows = conn.execute(
+                "SELECT distribution_idx FROM answers WHERE session_slug='test-slug'"
+            ).fetchall()
+        assert sorted(r[0] for r in rows) == [0, 1, 2, 3]
+
+    def test_resets_distribution_counter_to_zero(self):
+        _make_session()
+        db.close_session("test-slug", time.time())
+        assert db.get_session("test-slug")["distribution_counter"] == 0
+
+    def test_no_distribution_idx_without_answers(self):
+        _make_session()
+        db.close_session("test-slug", time.time())  # should not raise
+        assert db.count_answers("test-slug") == 0
+
 
 # ---------------------------------------------------------------------------
 # Answers
@@ -128,21 +162,44 @@ class TestAnswers:
         assert rows[0]["answer_text"] == "Earlier"
         assert rows[1]["answer_text"] == "Later"
 
-    def test_get_random_answer_none_when_empty(self):
-        assert db.get_random_answer("ans-slug") is None
+    def test_get_next_answer_none_when_empty(self):
+        db.close_session("ans-slug", time.time())
+        assert db.get_next_answer("ans-slug") is None
 
-    def test_get_random_answer_returns_a_row(self):
+    def test_get_next_answer_returns_the_answer(self):
         db.add_answer("ans-slug", "Only answer", time.time())
-        row = db.get_random_answer("ans-slug")
+        db.close_session("ans-slug", time.time())
+        row = db.get_next_answer("ans-slug")
         assert row is not None
         assert row["answer_text"] == "Only answer"
 
-    def test_get_random_answer_from_multiple(self):
-        db.add_answer("ans-slug", "A", time.time())
-        db.add_answer("ans-slug", "B", time.time())
-        db.add_answer("ans-slug", "C", time.time())
-        row = db.get_random_answer("ans-slug")
-        assert row["answer_text"] in ("A", "B", "C")
+    def test_get_next_answer_distributes_all_before_repeating(self):
+        """Every answer appears exactly once in the first N calls."""
+        texts = ["Alpha", "Beta", "Gamma", "Delta"]
+        for t in texts:
+            db.add_answer("ans-slug", t, time.time())
+        db.close_session("ans-slug", time.time())
+
+        received = [db.get_next_answer("ans-slug")["answer_text"] for _ in texts]
+        assert sorted(received) == sorted(texts), "Each answer must be distributed exactly once"
+
+    def test_get_next_answer_no_duplicates_in_first_pass(self):
+        for i in range(5):
+            db.add_answer("ans-slug", f"Answer {i}", time.time())
+        db.close_session("ans-slug", time.time())
+
+        received = [db.get_next_answer("ans-slug")["answer_text"] for _ in range(5)]
+        assert len(set(received)) == 5, "No duplicates on the first pass"
+
+    def test_get_next_answer_wraps_when_more_callers_than_answers(self):
+        """Extra callers beyond the answer count get a repeated answer rather than an error."""
+        db.add_answer("ans-slug", "Solo", time.time())
+        db.close_session("ans-slug", time.time())
+
+        row1 = db.get_next_answer("ans-slug")
+        row2 = db.get_next_answer("ans-slug")  # wraps back to slot 0
+        assert row1["answer_text"] == "Solo"
+        assert row2["answer_text"] == "Solo"
 
     def test_count_is_per_session(self):
         _make_session("other-slug")
