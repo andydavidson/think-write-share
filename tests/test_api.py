@@ -369,6 +369,53 @@ class TestDownloadMarkdown:
 
 
 # ---------------------------------------------------------------------------
+# GET /admin/{slug}/{token}/download.pdf
+# ---------------------------------------------------------------------------
+
+class TestDownloadPdf:
+    def test_returns_200(self, client):
+        slug, token = _create_session(client)
+        assert client.get(f"/admin/{slug}/{token}/download.pdf").status_code == 200
+
+    def test_content_type_is_pdf(self, client):
+        slug, token = _create_session(client)
+        resp = client.get(f"/admin/{slug}/{token}/download.pdf")
+        assert resp.headers["content-type"] == "application/pdf"
+
+    def test_content_disposition_filename(self, client):
+        slug, token = _create_session(client)
+        resp = client.get(f"/admin/{slug}/{token}/download.pdf")
+        assert f"tws-{slug}.pdf" in resp.headers.get("content-disposition", "")
+
+    def test_response_is_non_empty_bytes(self, client):
+        slug, token = _create_session(client)
+        resp = client.get(f"/admin/{slug}/{token}/download.pdf")
+        assert len(resp.content) > 1000  # a real PDF is never tiny
+
+    def test_response_starts_with_pdf_magic(self, client):
+        slug, token = _create_session(client)
+        resp = client.get(f"/admin/{slug}/{token}/download.pdf")
+        assert resp.content[:4] == b"%PDF"
+
+    def test_wrong_token_returns_404(self, client):
+        slug, _ = _create_session(client)
+        assert client.get(f"/admin/{slug}/bad-token/download.pdf").status_code == 404
+
+    def test_unknown_slug_returns_404(self, client):
+        assert client.get("/admin/no-such/any-token/download.pdf").status_code == 404
+
+    def test_pdf_with_answers(self, client, db_path):
+        import db as db_module
+        slug, token = _create_session(client, question="What matters most?")
+        db_module.set_status(slug, "writing")
+        db_module.add_answer(slug, "Collaboration", time.time())
+        db_module.add_answer(slug, "Trust", time.time())
+        resp = client.get(f"/admin/{slug}/{token}/download.pdf")
+        assert resp.status_code == 200
+        assert resp.content[:4] == b"%PDF"
+
+
+# ---------------------------------------------------------------------------
 # GET /api/random-slug
 # ---------------------------------------------------------------------------
 

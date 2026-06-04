@@ -168,6 +168,8 @@ textarea { resize: vertical; }
 .btn-danger:hover   { background: var(--danger-dk); }
 .btn-download { background: var(--success); color: #fff; }
 .btn-download:hover { background: #1e5a3e; color: #fff; }
+.btn-pdf  { background: #5a3e8a; color: #fff; }
+.btn-pdf:hover  { background: #432e68; color: #fff; }
 .btn-large  { font-size: 1.05rem; padding: .7rem 1.6rem; }
 .btn-small  { font-size: .8rem; padding: .3rem .7rem; }
 .btn-action { width: 100%; margin-bottom: .75rem; text-align: center; }

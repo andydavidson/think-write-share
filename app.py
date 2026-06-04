@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from threading import Lock
 from typing import Optional
 
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, Form, HTTPException, Request, Response
 from fastapi.responses import (
     HTMLResponse,
     JSONResponse,
@@ -324,6 +324,33 @@ async def download_answers(slug: str, admin_token: str):
         content,
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="tws-{slug}.md"'},
+    )
+
+
+@app.get("/admin/{slug}/{admin_token}/download.pdf")
+async def download_pdf(slug: str, admin_token: str):
+    session = db.get_session(slug)
+    if session is None or not secrets.compare_digest(session["admin_token"], admin_token):
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    answers = db.get_answers(slug)
+
+    def fmt_ts(ts) -> str:
+        if ts is None:
+            return "\u2014"
+        return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    from pdf_export import generate_pdf
+    pdf_bytes = generate_pdf(
+        session, answers,
+        fmt_ts(session["created_at"]),
+        fmt_ts(session["closed_at"]),
+    )
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="tws-{slug}.pdf"'},
     )
 
 
