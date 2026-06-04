@@ -1,6 +1,6 @@
 # Think–Write–Share
 
-A small, anonymous web app for running [Think–Write–Share](https://www.thinkwriteshare.com/) facilitation sessions.
+A small, anonymous web app for running [Think–Write–Share](https://www.thinkwriteshare.net/) facilitation sessions.
 
 Think–Write–Share is a structured participation technique used in meetings and workshops. It gives everyone quiet time to think, then invites written responses before the group shares — reducing groupthink and preventing louder voices from dominating.
 
