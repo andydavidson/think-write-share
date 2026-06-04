@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Think&ndash;Write&ndash;Share: {{ session.question | truncate(80) }}</title>
+<style>
+/* ------------------------------------------------------------------ */
+/* Page setup                                                           */
+/* ------------------------------------------------------------------ */
+@page {
+  size: A4;
+  margin: 2.6cm 2.8cm 3.2cm 2.8cm;
+
+  @bottom-left {
+    content: "/s/{{ session.slug }}";
+    font-family: "Courier New", "Courier", monospace;
+    font-size: 8pt;
+    color: #9aa0b0;
+  }
+  @bottom-right {
+    content: "Page " counter(page) " of " counter(pages);
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 8pt;
+    color: #9aa0b0;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Base typography                                                      */
+/* ------------------------------------------------------------------ */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: Georgia, "Times New Roman", "Liberation Serif", serif;
+  font-size: 11pt;
+  line-height: 1.65;
+  color: #1a1e2e;
+}
+
+/* ------------------------------------------------------------------ */
+/* Document header                                                      */
+/* ------------------------------------------------------------------ */
+.doc-header {
+  display: table;         /* table trick keeps WeasyPrint layout stable */
+  width: 100%;
+  border-bottom: 2pt solid #2a6496;
+  padding-bottom: 1.1em;
+  margin-bottom: 2em;
+}
+.doc-header-left  { display: table-cell; vertical-align: bottom; }
+.doc-header-right { display: table-cell; vertical-align: bottom; text-align: right; }
+
+.doc-title {
+  font-size: 19pt;
+  font-weight: normal;
+  letter-spacing: -0.015em;
+  color: #1a1e2e;
+}
+
+.doc-label {
+  font-size: 8pt;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #5a6378;
+  margin-top: 0.15em;
+}
+
+/* ------------------------------------------------------------------ */
+/* Question block                                                       */
+/* ------------------------------------------------------------------ */
+.question-block {
+  border-left: 3.5pt solid #2a6496;
+  background: #f5f6f8;
+  padding: 1.1em 1.4em 1.2em;
+  margin-bottom: 1.8em;
+  page-break-inside: avoid;
+}
+
+.block-label {
+  font-size: 7.5pt;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #5a6378;
+  margin-bottom: 0.5em;
+}
+
+.question-text {
+  font-size: 15pt;
+  line-height: 1.45;
+  font-weight: normal;
+  color: #1a1e2e;
+}
+
+/* ------------------------------------------------------------------ */
+/* Metadata table                                                       */
+/* ------------------------------------------------------------------ */
+.meta-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 9pt;
+  margin-bottom: 2.2em;
+  color: #5a6378;
+}
+.meta-table td {
+  padding: 0.22em 0.5em 0.22em 0;
+  vertical-align: top;
+}
+.meta-key {
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #1a1e2e;
+  white-space: nowrap;
+  width: 90pt;
+}
+
+/* ------------------------------------------------------------------ */
+/* Responses section                                                    */
+/* ------------------------------------------------------------------ */
+.section-rule {
+  font-size: 8pt;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #5a6378;
+  border-bottom: 0.5pt solid #c8cdd8;
+  padding-bottom: 0.5em;
+  margin-bottom: 1.4em;
+}
+
+.answer {
+  border: 0.5pt solid #d8dde6;
+  border-left: 3pt solid #2a6496;
+  padding: 0.85em 1.1em 0.9em;
+  margin-bottom: 1em;
+  background: #ffffff;
+  page-break-inside: avoid;
+}
+
+.answer-num {
+  font-size: 7.5pt;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #2a6496;
+  margin-bottom: 0.4em;
+}
+
+.answer-text {
+  font-size: 11pt;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.no-answers {
+  font-size: 10pt;
+  color: #5a6378;
+  font-style: italic;
+}
+</style>
+</head>
+<body>
+
+<div class="doc-header">
+  <div class="doc-header-left">
+    <div class="doc-title">Think&ndash;Write&ndash;Share</div>
+    <div class="doc-label">Session Report</div>
+  </div>
+  <div class="doc-header-right">
+    <div class="doc-label">{{ answer_count }} response{% if answer_count != 1 %}s{% endif %}</div>
+  </div>
+</div>
+
+<div class="question-block">
+  <div class="block-label">Question</div>
+  <div class="question-text">{{ session.question }}</div>
+</div>
+
+<table class="meta-table">
+  <tr>
+    <td class="meta-key">Session</td>
+    <td>/s/{{ session.slug }}</td>
+  </tr>
+  <tr>
+    <td class="meta-key">Created</td>
+    <td>{{ created_fmt }}</td>
+  </tr>
+  <tr>
+    <td class="meta-key">Closed</td>
+    <td>{{ closed_fmt }}</td>
+  </tr>
+  <tr>
+    <td class="meta-key">Responses</td>
+    <td>{{ answer_count }}</td>
+  </tr>
+</table>
+
+<div class="section-rule">Responses</div>
+
+{% if answers %}
+  {% for answer in answers %}
+  <div class="answer">
+    <div class="answer-num">Response {{ loop.index }}</div>
+    <div class="answer-text">{{ answer.answer_text }}</div>
+  </div>
+  {% endfor %}
+{% else %}
+  <p class="no-answers">No responses were submitted.</p>
+{% endif %}
+
+</body>
+</html>
