@@ -13,6 +13,9 @@ from typing import Optional
 
 DB_PATH = os.environ.get("TWS_DB_PATH", "tws.db")
 
+# Answer shuffling decides who sees whose answer, so use the OS CSPRNG.
+_rng = random.SystemRandom()
+
 
 def _conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
@@ -101,6 +104,22 @@ def set_status(slug: str, status: str) -> None:
         conn.commit()
 
 
+def advance_to_writing(slug: str) -> bool:
+    """
+    Move a session from 'thinking' to 'writing'.
+
+    Conditional on the current status so a concurrent close is never undone.
+    Returns True if the session was advanced.
+    """
+    with _conn() as conn:
+        cur = conn.execute(
+            "UPDATE sessions SET status='writing' WHERE slug=? AND status='thinking'",
+            (slug,),
+        )
+        conn.commit()
+        return cur.rowcount == 1
+
+
 def close_session(slug: str, closed_at: float) -> None:
     """
     Close the session and assign a shuffled distribution_idx to every answer.
@@ -109,23 +128,27 @@ def close_session(slug: str, closed_at: float) -> None:
     distribution_counter can be incremented atomically per retrieval request,
     guaranteeing each answer is served to exactly one participant on the first
     pass (wrapping around only if more people request than submitted answers).
+
+    The status is flipped first: that write opens the transaction and takes
+    the database write lock, so no answer can be inserted between the status
+    change and the shuffle (see add_answer_if_writing).
     """
     with _conn() as conn:
+        conn.execute(
+            "UPDATE sessions SET status='closed', closed_at=?, distribution_counter=0 WHERE slug=?",
+            (closed_at, slug),
+        )
         rows = conn.execute(
             "SELECT id FROM answers WHERE session_slug = ? ORDER BY submitted_at",
             (slug,),
         ).fetchall()
         ids = [r[0] for r in rows]
-        random.shuffle(ids)
+        _rng.shuffle(ids)
         for idx, answer_id in enumerate(ids):
             conn.execute(
                 "UPDATE answers SET distribution_idx = ? WHERE id = ?",
                 (idx, answer_id),
             )
-        conn.execute(
-            "UPDATE sessions SET status='closed', closed_at=?, distribution_counter=0 WHERE slug=?",
-            (closed_at, slug),
-        )
         conn.commit()
 
 
@@ -137,6 +160,26 @@ def add_answer(session_slug: str, answer_text: str, submitted_at: float) -> None
             (session_slug, answer_text, submitted_at),
         )
         conn.commit()
+
+
+def add_answer_if_writing(session_slug: str, answer_text: str, submitted_at: float) -> bool:
+    """
+    Store an answer only if the session is still accepting submissions.
+
+    The status check and the insert are a single statement, so an answer can
+    never land after close_session has shuffled the answers. Returns True if
+    the answer was stored.
+    """
+    # Privacy: only text + timestamp stored; no participant identifier.
+    with _conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO answers (session_slug, answer_text, submitted_at)"
+            " SELECT ?, ?, ?"
+            " WHERE EXISTS (SELECT 1 FROM sessions WHERE slug = ? AND status = 'writing')",
+            (session_slug, answer_text, submitted_at, session_slug),
+        )
+        conn.commit()
+        return cur.rowcount == 1
 
 
 def count_answers(session_slug: str) -> int:
@@ -177,8 +220,10 @@ def get_next_answer(session_slug: str) -> Optional[sqlite3.Row]:
         ).fetchone()
         counter = row[0] - 1  # 0-indexed slot for this caller
 
+        # Only answers included in the close-time shuffle are distributable.
         count = conn.execute(
-            "SELECT COUNT(*) FROM answers WHERE session_slug = ?",
+            "SELECT COUNT(*) FROM answers"
+            " WHERE session_slug = ? AND distribution_idx IS NOT NULL",
             (session_slug,),
         ).fetchone()[0]
 
@@ -191,3 +236,23 @@ def get_next_answer(session_slug: str) -> Optional[sqlite3.Row]:
             " WHERE session_slug = ? AND distribution_idx = ?",
             (session_slug, idx),
         ).fetchone()
+
+
+def purge_old_sessions(cutoff: float) -> int:
+    """
+    Delete sessions (and their answers) last active before `cutoff`.
+
+    A session's last activity is its close time, or its creation time if it
+    was never closed. Returns the number of sessions deleted.
+    """
+    with _conn() as conn:
+        stale = "SELECT slug FROM sessions WHERE COALESCE(closed_at, created_at) < ?"
+        conn.execute(
+            f"DELETE FROM answers WHERE session_slug IN ({stale})", (cutoff,)
+        )
+        cur = conn.execute(
+            "DELETE FROM sessions WHERE COALESCE(closed_at, created_at) < ?",
+            (cutoff,),
+        )
+        conn.commit()
+        return cur.rowcount

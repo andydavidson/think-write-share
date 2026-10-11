@@ -212,3 +212,80 @@ class TestAnswers:
         col_names = [k.lower() for k in rows[0].keys()]
         for forbidden in ("participant", "user_id", "ip", "cookie", "session_id"):
             assert forbidden not in col_names, f"Found forbidden column: {forbidden}"
+
+
+# ---------------------------------------------------------------------------
+# Race-safe status transitions and inserts
+# ---------------------------------------------------------------------------
+
+class TestAdvanceToWriting:
+    def test_advances_from_thinking(self):
+        _make_session()
+        db.start_timer("test-slug", time.time() - 120)
+        assert db.advance_to_writing("test-slug") is True
+        assert db.get_session("test-slug")["status"] == "writing"
+
+    def test_does_not_reopen_closed_session(self):
+        _make_session()
+        db.start_timer("test-slug", time.time() - 120)
+        db.close_session("test-slug", time.time())
+        assert db.advance_to_writing("test-slug") is False
+        assert db.get_session("test-slug")["status"] == "closed"
+
+
+class TestAddAnswerIfWriting:
+    def test_stores_when_writing(self):
+        _make_session()
+        db.set_status("test-slug", "writing")
+        assert db.add_answer_if_writing("test-slug", "Hello", time.time()) is True
+        assert db.count_answers("test-slug") == 1
+
+    def test_rejected_when_closed(self):
+        _make_session()
+        db.close_session("test-slug", time.time())
+        assert db.add_answer_if_writing("test-slug", "Late", time.time()) is False
+        assert db.count_answers("test-slug") == 0
+
+    def test_rejected_when_waiting(self):
+        _make_session()
+        assert db.add_answer_if_writing("test-slug", "Early", time.time()) is False
+
+    def test_rejected_for_unknown_session(self):
+        assert db.add_answer_if_writing("no-such", "Hi", time.time()) is False
+
+
+class TestGetNextAnswerIgnoresUnshuffled:
+    def test_answer_added_after_close_is_never_served(self):
+        _make_session()
+        db.add_answer("test-slug", "Shuffled", time.time())
+        db.close_session("test-slug", time.time())
+        # Simulate an answer that slipped in without a distribution_idx.
+        db.add_answer("test-slug", "Unshuffled", time.time())
+        for _ in range(4):
+            assert db.get_next_answer("test-slug")["answer_text"] == "Shuffled"
+
+
+# ---------------------------------------------------------------------------
+# Retention
+# ---------------------------------------------------------------------------
+
+class TestPurgeOldSessions:
+    def test_deletes_old_closed_session_and_answers(self):
+        _make_session("old-slug", created_at=1000.0)
+        db.add_answer("old-slug", "Old answer", 1001.0)
+        db.close_session("old-slug", 1002.0)
+        assert db.purge_old_sessions(cutoff=2000.0) == 1
+        assert db.get_session("old-slug") is None
+        assert db.count_answers("old-slug") == 0
+
+    def test_deletes_old_never_closed_session(self):
+        _make_session("stale-slug", created_at=1000.0)
+        db.purge_old_sessions(cutoff=2000.0)
+        assert db.get_session("stale-slug") is None
+
+    def test_keeps_recently_closed_session(self):
+        # Created long ago but closed recently: retention runs from close time.
+        _make_session("recent-slug", created_at=1000.0)
+        db.close_session("recent-slug", 3000.0)
+        assert db.purge_old_sessions(cutoff=2000.0) == 0
+        assert db.get_session("recent-slug") is not None

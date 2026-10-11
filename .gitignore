@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Virtual environments (run.sh creates ./venv)
+venv/
+.venv/
+
+# SQLite database and its WAL/shared-memory files — holds participant answers
+*.db
+*.db-wal
+*.db-shm
+*.db.bak
+
+# Local environment overrides
+.env
+
+# OS / editor noise
+.DS_Store
+.idea/
+.vscode/

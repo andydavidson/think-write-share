@@ -10,11 +10,13 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture(autouse=True)
 def reset_rate_limiter():
-    """Clear per-session rate-limiter state between tests."""
+    """Clear rate-limiter state between tests."""
     import app as app_module
     app_module._rl_sessions.clear()
+    app_module._rl_global.clear()
     yield
     app_module._rl_sessions.clear()
+    app_module._rl_global.clear()
 
 
 @pytest.fixture()

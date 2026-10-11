@@ -8,13 +8,15 @@ Privacy by design:
 - Rate limiting uses per-session in-memory counters (not per-IP) so no IP
   is retained even transiently for that purpose.
 - Answer storage contains only answer text and a submission timestamp.
+- Sessions and their answers are deleted after TWS_RETENTION_DAYS.
 """
+import asyncio
 import os
 import re
 import secrets
 import time
 from collections import defaultdict
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 from threading import Lock
 from typing import Optional
@@ -39,10 +41,31 @@ from words import generate_slug
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+# Sessions (and their answers) are deleted this long after they were closed,
+# or after they were created if never closed.
+RETENTION_DAYS = float(os.environ.get("TWS_RETENTION_DAYS", "30"))
+PURGE_INTERVAL_SECONDS = 3600
+
+
+def _purge_expired() -> int:
+    return db.purge_old_sessions(time.time() - RETENTION_DAYS * 86400)
+
+
+async def _purge_loop() -> None:
+    while True:
+        await asyncio.sleep(PURGE_INTERVAL_SECONDS)
+        await asyncio.to_thread(_purge_expired)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.init_db()
+    _purge_expired()
+    purge_task = asyncio.create_task(_purge_loop())
     yield
+    purge_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await purge_task
 
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -69,6 +92,9 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = (
+        "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    )
     # Do not cache pages that carry the admin token in the URL.
     if "/admin/" in str(request.url):
         response.headers["Cache-Control"] = "no-store"
@@ -111,27 +137,57 @@ def validate_slug(slug: str) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
-# Rate limiting — per session, not per IP (privacy by design).
-# Limits the total submission rate for a session to reduce flooding.
+# Rate limiting — per session or global, never per IP (privacy by design).
+# Submissions are limited per session to reduce flooding; session creation is
+# limited globally to stop the database being filled.
 # ---------------------------------------------------------------------------
 
 _rl_lock = Lock()
 _rl_sessions: dict[str, list[float]] = defaultdict(list)
+_rl_global: dict[str, list[float]] = defaultdict(list)
+_rl_last_sweep = 0.0
 RL_WINDOW_SECONDS = 60
 RL_MAX_PER_WINDOW = 50
+RL_CREATE_MAX_PER_WINDOW = 30
+
+
+def _sweep_expired(now: float) -> None:
+    """Drop keys with no timestamps left in the window so memory stays bounded."""
+    global _rl_last_sweep
+    if now - _rl_last_sweep < RL_WINDOW_SECONDS:
+        return
+    _rl_last_sweep = now
+    for buckets in (_rl_sessions, _rl_global):
+        for key in list(buckets):
+            times = [t for t in buckets[key] if now - t < RL_WINDOW_SECONDS]
+            if times:
+                buckets[key] = times
+            else:
+                del buckets[key]
+
+
+def _hit(buckets: dict[str, list[float]], key: str, limit: int) -> bool:
+    """Record a request against `key`; return True if it exceeds `limit`."""
+    now = time.time()
+    with _rl_lock:
+        _sweep_expired(now)
+        times = buckets[key]
+        # Evict entries older than the window
+        times[:] = [t for t in times if now - t < RL_WINDOW_SECONDS]
+        if len(times) >= limit:
+            return True
+        times.append(now)
+        return False
 
 
 def _is_rate_limited(slug: str) -> bool:
     """Return True if the session has exceeded the submission rate limit."""
-    now = time.time()
-    with _rl_lock:
-        times = _rl_sessions[slug]
-        # Evict entries older than the window
-        times[:] = [t for t in times if now - t < RL_WINDOW_SECONDS]
-        if len(times) >= RL_MAX_PER_WINDOW:
-            return True
-        times.append(now)
-        return False
+    return _hit(_rl_sessions, slug, RL_MAX_PER_WINDOW)
+
+
+def _is_create_rate_limited() -> bool:
+    """Return True if sessions are being created too fast, site-wide."""
+    return _hit(_rl_global, "create", RL_CREATE_MAX_PER_WINDOW)
 
 
 # ---------------------------------------------------------------------------
@@ -147,8 +203,12 @@ def _effective_status(session) -> str:
     if status == "thinking" and session["timer_started_at"]:
         elapsed = time.time() - session["timer_started_at"]
         if elapsed >= session["timer_seconds"]:
-            db.set_status(session["slug"], "writing")
-            return "writing"
+            if db.advance_to_writing(session["slug"]):
+                return "writing"
+            # The status changed under us (e.g. the facilitator closed the
+            # session); report whatever it is now.
+            current = db.get_session(session["slug"])
+            return current["status"] if current else status
     return status
 
 
@@ -195,6 +255,15 @@ async def create_session(
 ):
     slug = slug.strip().lower()
     question = question.strip()
+
+    if _is_create_rate_limited():
+        return templates.TemplateResponse(request, "create.html", {
+            "suggested_slug": slug,
+            "errors": ["Too many sessions are being created right now. Please try again in a minute."],
+            "question": question,
+            "timer_seconds": timer_seconds,
+        }, status_code=429)
+
     errors = []
 
     slug_error = validate_slug(slug)
@@ -288,6 +357,12 @@ async def close_submissions(slug: str, admin_token: str):
     return RedirectResponse(f"/admin/{slug}/{admin_token}", status_code=303)
 
 
+def _md_fence(text: str) -> str:
+    """Return a backtick fence longer than any backtick run inside `text`."""
+    longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
+    return "`" * max(3, longest + 1)
+
+
 @app.get("/admin/{slug}/{admin_token}/download.md")
 async def download_answers(slug: str, admin_token: str):
     session = db.get_session(slug)
@@ -311,8 +386,16 @@ async def download_answers(slug: str, admin_token: str):
         "## Answers",
         "",
     ]
+    # Each answer goes in its own fenced code block so participant-supplied
+    # Markdown/HTML (links, remote images, raw tags) is shown literally rather
+    # than rendered when the facilitator opens the file.
     for i, row in enumerate(answers, 1):
-        lines.append(f"{i}. {row['answer_text']}")
+        fence = _md_fence(row["answer_text"])
+        lines.append(f"### {i}.")
+        lines.append("")
+        lines.append(f"{fence}text")
+        lines.append(row["answer_text"])
+        lines.append(fence)
         lines.append("")
 
     if not answers:
@@ -398,13 +481,15 @@ async def api_state(slug: str):
 
 @app.post("/api/s/{slug}/answer")
 async def api_submit_answer(slug: str, request: Request):
-    # Rate limit by session — no IP addresses are examined or stored.
-    if _is_rate_limited(slug):
-        raise HTTPException(status_code=429, detail="Too many submissions. Please wait and try again.")
-
+    # Look the session up first so the rate limiter only ever holds keys for
+    # sessions that exist.
     session = db.get_session(slug)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
+
+    # Rate limit by session — no IP addresses are examined or stored.
+    if _is_rate_limited(slug):
+        raise HTTPException(status_code=429, detail="Too many submissions. Please wait and try again.")
 
     status = _effective_status(session)
     if status != "writing":
@@ -414,6 +499,8 @@ async def api_submit_answer(slug: str, request: Request):
         body = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="Request body must be valid JSON.")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Request body must be a JSON object.")
 
     answer_text = str(body.get("answer", "")).strip()
     if not answer_text:
@@ -425,7 +512,10 @@ async def api_submit_answer(slug: str, request: Request):
         )
 
     # Store only the text and timestamp — no participant identifier.
-    db.add_answer(slug, answer_text, time.time())
+    # The insert re-checks the status atomically in case the session closed
+    # since the check above.
+    if not db.add_answer_if_writing(slug, answer_text, time.time()):
+        raise HTTPException(status_code=400, detail="Submissions are not open right now.")
     return JSONResponse({"ok": True})
 
 

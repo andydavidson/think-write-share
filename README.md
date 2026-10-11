@@ -61,6 +61,7 @@ pytest tests/ -v
 | Environment variable | Default   | Description                      |
 |----------------------|-----------|----------------------------------|
 | `TWS_DB_PATH`        | `tws.db`  | Path to the SQLite database file |
+| `TWS_RETENTION_DAYS` | `30`      | Days after a session closes (or is created, if never closed) before it and its answers are deleted. Checked at startup and hourly. |
 
 ---
 
@@ -167,6 +168,10 @@ sudo cp /var/lib/tws/tws.db /var/lib/tws/tws.db.bak
 - Admin tokens are generated with `secrets.token_urlsafe(32)` (cryptographically secure).
 - The admin token appears only in the facilitator's URL — it is never stored in a cookie or sent to participants.
 - All pages are served with `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`, and `Referrer-Policy` headers.
-- Rate limiting on answer submission is enforced per session (not per IP, to avoid retaining IP addresses).
+- Rate limiting on answer submission is enforced per session, and session creation is limited site-wide (neither is per IP, to avoid retaining IP addresses).
+- Session slugs and the answer shuffle use the OS CSPRNG (`random.SystemRandom`), so suggested slugs cannot be predicted.
+- Sessions and answers are deleted automatically after `TWS_RETENTION_DAYS` (default 30).
+- The Markdown export puts each answer in a fenced code block, so links, images or HTML in an answer are shown as text rather than rendered.
+- nginx sends `Strict-Transport-Security`; the app sends a restrictive `Permissions-Policy`.
 - Because the admin token is in the URL, **HTTPS is essential** — the nginx config enforces this.
 - The nginx `log_format` strips query strings so that tokens are not written to the access log.

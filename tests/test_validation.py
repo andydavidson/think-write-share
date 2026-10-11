@@ -7,8 +7,10 @@ from app import (
     validate_slug,
     _effective_status,
     _is_rate_limited,
+    _is_create_rate_limited,
     _rl_sessions,
     RL_MAX_PER_WINDOW,
+    RL_CREATE_MAX_PER_WINDOW,
     MIN_SLUG_LEN,
     MAX_SLUG_LEN,
 )
@@ -101,19 +103,19 @@ class TestEffectiveStatus:
         }
 
     def test_waiting_unchanged(self):
-        with patch("app.db.set_status") as mock_set:
+        with patch("app.db.advance_to_writing") as mock_set:
             result = _effective_status(self._session("waiting"))
         assert result == "waiting"
         mock_set.assert_not_called()
 
     def test_writing_unchanged(self):
-        with patch("app.db.set_status") as mock_set:
+        with patch("app.db.advance_to_writing") as mock_set:
             result = _effective_status(self._session("writing"))
         assert result == "writing"
         mock_set.assert_not_called()
 
     def test_closed_unchanged(self):
-        with patch("app.db.set_status") as mock_set:
+        with patch("app.db.advance_to_writing") as mock_set:
             result = _effective_status(self._session("closed"))
         assert result == "closed"
         mock_set.assert_not_called()
@@ -121,7 +123,7 @@ class TestEffectiveStatus:
     def test_thinking_before_timer_expiry_stays_thinking(self):
         started = time.time() - 10  # 10 s elapsed, timer is 60 s
         session = self._session("thinking", timer_started_at=started, timer_seconds=60)
-        with patch("app.db.set_status") as mock_set:
+        with patch("app.db.advance_to_writing") as mock_set:
             result = _effective_status(session)
         assert result == "thinking"
         mock_set.assert_not_called()
@@ -129,24 +131,32 @@ class TestEffectiveStatus:
     def test_thinking_after_timer_expiry_transitions_to_writing(self):
         started = time.time() - 120  # 120 s elapsed, timer is 60 s
         session = self._session("thinking", timer_started_at=started, timer_seconds=60)
-        with patch("app.db.set_status") as mock_set:
+        with patch("app.db.advance_to_writing") as mock_set:
             result = _effective_status(session)
         assert result == "writing"
-        mock_set.assert_called_once_with("test-slug", "writing")
+        mock_set.assert_called_once_with("test-slug")
 
     def test_thinking_exactly_at_expiry_transitions(self):
         started = time.time() - 60  # exactly at boundary
         session = self._session("thinking", timer_started_at=started, timer_seconds=60)
-        with patch("app.db.set_status"):
+        with patch("app.db.advance_to_writing"):
             result = _effective_status(session)
         assert result == "writing"
 
     def test_thinking_with_no_timer_started_stays_thinking(self):
         session = self._session("thinking", timer_started_at=None)
-        with patch("app.db.set_status") as mock_set:
+        with patch("app.db.advance_to_writing") as mock_set:
             result = _effective_status(session)
         assert result == "thinking"
         mock_set.assert_not_called()
+
+    def test_reports_current_status_if_closed_concurrently(self):
+        started = time.time() - 120
+        session = self._session("thinking", timer_started_at=started, timer_seconds=60)
+        with patch("app.db.advance_to_writing", return_value=False), \
+             patch("app.db.get_session", return_value={"status": "closed"}):
+            result = _effective_status(session)
+        assert result == "closed"
 
     def test_db_updated_on_transition(self, db_path, monkeypatch):
         import db as db_module
@@ -203,3 +213,20 @@ class TestRateLimiting:
         app_module._rl_sessions[slug] = [old_time] * RL_MAX_PER_WINDOW
         # Old entries should be evicted; the call should succeed
         assert _is_rate_limited(slug) is False
+
+    def test_stale_keys_are_swept(self):
+        import app as app_module
+        _rl_sessions.clear()
+        old_time = time.time() - app_module.RL_WINDOW_SECONDS - 1
+        app_module._rl_sessions["gone-slug"] = [old_time]
+        app_module._rl_last_sweep = 0.0
+        _is_rate_limited("live-slug")
+        assert "gone-slug" not in app_module._rl_sessions
+        assert "live-slug" in app_module._rl_sessions
+
+
+class TestCreateRateLimiting:
+    def test_blocked_after_max_creations(self):
+        for _ in range(RL_CREATE_MAX_PER_WINDOW):
+            assert _is_create_rate_limited() is False
+        assert _is_create_rate_limited() is True

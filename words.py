@@ -4,6 +4,10 @@ Privacy: slugs are not linked to any participant or facilitator identity.
 """
 import random
 
+# Slugs are effectively the access control for a session, so draw them from
+# the OS CSPRNG rather than the predictable Mersenne Twister.
+_rng = random.SystemRandom()
+
 _ADJECTIVES = [
     "amber", "azure", "bright", "calm", "cedar", "clear", "coral", "crisp",
     "deep", "early", "ember", "fern", "flint", "foggy", "forest", "frost",
@@ -36,5 +40,5 @@ _NOUNS = [
 def generate_slug(word_count: int = 4) -> str:
     """Generate a random friendly slug from the word lists."""
     pool = _ADJECTIVES + _NOUNS
-    words = random.sample(pool, word_count)
+    words = _rng.sample(pool, word_count)
     return "-".join(words)

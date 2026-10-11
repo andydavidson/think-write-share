@@ -367,6 +367,24 @@ class TestDownloadMarkdown:
         slug, _ = _create_session(client)
         assert client.get(f"/admin/{slug}/bad-token/download.md").status_code == 404
 
+    def test_answer_markdown_is_not_rendered(self, client, db_path):
+        import db as db_module
+        slug, token = _create_session(client)
+        db_module.set_status(slug, "writing")
+        evil = "![x](https://evil.example/pixel.png) <img src=x>"
+        db_module.add_answer(slug, evil, time.time())
+        text = client.get(f"/admin/{slug}/{token}/download.md").text
+        assert f"```text\n{evil}\n```" in text
+
+    def test_answer_cannot_break_out_of_fence(self, client, db_path):
+        import db as db_module
+        slug, token = _create_session(client)
+        db_module.set_status(slug, "writing")
+        db_module.add_answer(slug, "a\n```\n![x](https://evil.example/p.png)", time.time())
+        text = client.get(f"/admin/{slug}/{token}/download.md").text
+        # Fence must be longer than the triple backticks inside the answer.
+        assert "````text\n" in text
+
 
 # ---------------------------------------------------------------------------
 # GET /admin/{slug}/{token}/download.pdf
@@ -567,6 +585,15 @@ class TestApiSubmitAnswer:
         resp = client.post("/api/s/unknown/answer", json={"answer": "Hello"})
         assert resp.status_code == 404
 
+    def test_non_object_json_returns_400(self, writing_slug, client):
+        resp = client.post(f"/api/s/{writing_slug}/answer", json=["not", "an", "object"])
+        assert resp.status_code == 400
+
+    def test_unknown_session_not_tracked_by_rate_limiter(self, client):
+        import app as app_module
+        client.post("/api/s/never-created/answer", json={"answer": "Hi"})
+        assert "never-created" not in app_module._rl_sessions
+
     def test_invalid_json_returns_400(self, writing_slug, client):
         resp = client.post(
             f"/api/s/{writing_slug}/answer",
@@ -693,3 +720,24 @@ class TestSecurityHeaders:
         _create_session(client)
         cc = client.get("/s/my-session").headers.get("cache-control", "")
         assert "no-store" not in cc
+
+
+# ---------------------------------------------------------------------------
+# Hardening
+# ---------------------------------------------------------------------------
+
+class TestHardening:
+    def test_permissions_policy_header(self, client):
+        assert "camera=()" in client.get("/").headers["permissions-policy"]
+
+    def test_create_is_rate_limited(self, client):
+        import app as app_module
+        for _ in range(app_module.RL_CREATE_MAX_PER_WINDOW):
+            app_module._is_create_rate_limited()
+        resp = client.post(
+            "/create",
+            data={"slug": "one-too-many", "question": "Q?", "timer_seconds": 60},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 429
+        assert "Too many sessions" in resp.text
